@@ -1,0 +1,9 @@
+{
+  "name": "stremiopp-windows",
+  "productName": "Stremio++",
+  "version": "1.0.0",
+  "description": "Stremio++ desktop client (Electron shell around the bundled TV app)",
+  "main": "main.js",
+  "license": "UNLICENSED",
+  "private": true
+}

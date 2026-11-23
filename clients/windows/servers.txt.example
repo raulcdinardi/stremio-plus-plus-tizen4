@@ -1,0 +1,3 @@
+# One server URL per line, in priority order. Rename to servers.txt to override the built-in list.
+http://100.64.0.10:8790
+http://192.168.1.10:8790

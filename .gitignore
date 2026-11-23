@@ -1,0 +1,13 @@
+secrets.json
+.env*
+state/
+stremio-server/
+tools/
+backups/
+dist/
+app-test/shots/
+node_modules/
+*.bak*
+*.wgt
+*.apk
+*.jks

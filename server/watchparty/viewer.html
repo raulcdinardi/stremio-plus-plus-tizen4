@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Watch together</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:#000;color:#fff;font:15px/1.35 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden}
+#stage{position:fixed;inset:0;background:#000;user-select:none;-webkit-user-select:none}
+video{position:absolute;inset:0;width:100%;height:100%;background:#000;object-fit:contain}
+#sub{position:absolute;left:4%;right:4%;bottom:14%;text-align:center;pointer-events:none;transition:bottom .2s}
+#stage.ui #sub{bottom:22%}
+#sub span{display:inline-block;background:rgba(0,0,0,.72);padding:.15em .5em;border-radius:.3em;font-size:clamp(15px,3.2vmin,30px);line-height:1.3;white-space:pre-line}
+#top{position:absolute;left:0;right:0;top:0;padding:10px 14px;padding-top:calc(10px + env(safe-area-inset-top));background:linear-gradient(#000a,#0000);display:flex;align-items:center;gap:10px;opacity:0;transition:opacity .25s;pointer-events:none}
+#ttl{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+#who{font-size:13px;opacity:.8}
+#bar{position:absolute;left:0;right:0;bottom:0;padding:8px 12px;padding-bottom:calc(8px + env(safe-area-inset-bottom));background:linear-gradient(#0000,#000c);display:flex;align-items:center;gap:10px;opacity:0;transition:opacity .25s}
+#stage.ui #top,#stage.ui #bar{opacity:1;pointer-events:auto}
+button{background:none;border:0;color:#fff;font:inherit;padding:8px;min-width:44px;min-height:44px;border-radius:22px;cursor:pointer}
+button:active{background:#fff3}
+button svg{width:26px;height:26px;fill:currentColor;vertical-align:middle}
+#seek{flex:1;height:34px;accent-color:#8b6dff;min-width:0}
+#tm{font-variant-numeric:tabular-nums;font-size:13px;white-space:nowrap;opacity:.9}
+#cc.off{opacity:.45}
+#feed{position:absolute;left:12px;top:60px;display:flex;flex-direction:column;gap:6px;pointer-events:none}
+#feed div{background:#000b;padding:6px 12px;border-radius:16px;font-size:14px;animation:fi .2s}
+@keyframes fi{from{opacity:0;transform:translateY(-6px)}}
+#msg{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:24px;background:#000c;font-size:18px;flex-direction:column;gap:14px}
+#msg.on{display:flex}
+#msg button{background:#7b5cff;font-size:18px;font-weight:600;padding:12px 34px;border-radius:30px}
+.spin{width:38px;height:38px;border:4px solid #fff3;border-top-color:#fff;border-radius:50%;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+#net{position:absolute;right:12px;top:calc(10px + env(safe-area-inset-top));font-size:12px;background:#a33;padding:3px 10px;border-radius:12px;display:none}
+</style>
+</head>
+<body>
+<div id="stage">
+  <video id="v" playsinline webkit-playsinline preload="auto"></video>
+  <div id="sub"></div>
+  <div id="top"><div id="ttl"></div><div id="who"></div></div>
+  <div id="net"></div>
+  <div id="feed"></div>
+  <div id="bar">
+    <button id="pp" aria-label="play/pause"></button>
+    <span id="tm">0:00</span>
+    <input id="seek" type="range" min="0" max="1000" value="0" step="1">
+    <button id="cc" class="off" aria-label="subtitles"><svg viewBox="0 0 24 24"><path d="M19 4H5a2 2 0 00-2 2v12a2 2 0 002 2h14a2 2 0 002-2V6a2 2 0 00-2-2zm-8 7H9.5v-.5h-2v3h2V13H11v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-4a1 1 0 011-1h3a1 1 0 011 1v1zm7 0h-1.5v-.5h-2v3h2V13H18v1a1 1 0 01-1 1h-3a1 1 0 01-1-1v-4a1 1 0 011-1h3a1 1 0 011 1v1z"/></svg></button>
+    <button id="fs" aria-label="fullscreen"><svg viewBox="0 0 24 24"><path d="M5 5h5v2H7v3H5V5zm9 0h5v5h-2V7h-3V5zM5 14h2v3h3v2H5v-5zm12 0h2v5h-5v-2h3v-3z"/></svg></button>
+  </div>
+  <div id="msg"><div id="mt"></div><div class="spin" id="msp"></div><button id="mb"></button></div>
+</div>
+<script src="hls.js"></script>
+<script>
+(function () {
+'use strict';
+var L = (navigator.language || 'en').toLowerCase().indexOf('pt') === 0 ? 'pt' : 'en';
+var S = {
+  pt: { title: 'Assistir junto', join: 'Entrar', joinMsg: '%o está assistindo %t', wait: 'Preparando o vídeo… pode levar alguns segundos.', change: 'A TV está trocando o conteúdo…', err: 'Não consegui preparar o vídeo: %m', closed: 'A sessão terminou.', full: 'A sala está cheia.', gone: 'Este link não é mais válido.',
+    played: '%n deu play', paused: '%n pausou', seeked: '%n pulou para %p', joined: '%n entrou', left: '%n saiu', reconnecting: 'Reconectando…', you: 'Você é %n', sub: 'Legenda', tap: 'Toque para continuar', guest: 'Convidado' },
+  en: { title: 'Watch together', join: 'Join', joinMsg: '%o is watching %t', wait: 'Preparing the video… this can take a few seconds.', change: 'The TV is switching content…', err: "Couldn't prepare the video: %m", closed: 'The session has ended.', full: 'The room is full.', gone: 'This link is no longer valid.',
+    played: '%n pressed play', paused: '%n paused', seeked: '%n jumped to %p', joined: '%n joined', left: '%n left', reconnecting: 'Reconnecting…', you: 'You are %n', sub: 'Subtitles', tap: 'Tap to continue', guest: 'Guest' }
+}[L];
+function T(k, o) { var s = S[k] || k; for (var a in o) s = s.replace('%' + a, o[a]); return s; }
+document.title = S.title;
+var $ = function (i) { return document.getElementById(i); };
+var v = $('v'), stage = $('stage');
+var base = location.pathname.replace(/[^\/]*$/, ''); // .../w/<token>/  (works behind a path prefix)
+var cid = (function () { try { var c = localStorage.getItem('spp-cid'); if (!c) { c = Math.random().toString(36).slice(2, 10) + Date.now().toString(36); localStorage.setItem('spp-cid', c); } return c; } catch (e) { return 'c' + Math.random().toString(36).slice(2, 10); } })();
+var me = { name: '' };
+
+/* ---- clock: serverNow() ---- */
+var off = 0, rttBest = 1e9;
+function serverNow() { return Date.now() + off; }
+function ping(n) {
+  var done = 0;
+  (function one() {
+    var t0 = performance.now();
+    fetch(base + 'time', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
+      var t1 = performance.now(), rtt = t1 - t0;
+      if (rtt <= rttBest * 1.5 || done === 0) { if (rtt < rttBest) rttBest = rtt; off = j.now + rtt / 2 - Date.now(); }
+      if (++done < n) setTimeout(one, 120);
+    }).catch(function () {});
+  })();
+}
+ping(6); setInterval(function () { rttBest = 1e9; ping(4); }, 30000);
+
+/* ---- room state ---- */
+var st = { playing: false, pos: 0, at: 0 };
+var src = { state: 'loading', title: '', label: '', duration: 0, playlist: null }, epoch = -1, owner = 'TV';
+var joined = false, hls = null, loadedEpoch = -2, lastHardSeek = 0, dragging = false, ccOn = true, subOn = false, cues = [], cueFetchedAt = -1e9, cueKey = '';
+function expected() { var p = st.playing ? st.pos + (serverNow() - st.at) / 1000 : st.pos; if (src.duration > 0) p = Math.min(p, src.duration); return Math.max(0, p); }
+
+/* ---- UI ---- */
+var PLAY = '<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>', PAUSE = '<svg viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>';
+function fmt(s) { s = Math.max(0, Math.floor(s)); var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (x < 10 ? '0' : '') + x; }
+function toast(t) {
+  var d = document.createElement('div'); d.textContent = t; $('feed').appendChild(d);
+  while ($('feed').children.length > 4) $('feed').removeChild($('feed').firstChild);
+  setTimeout(function () { if (d.parentNode) d.parentNode.removeChild(d); }, 4500);
+}
+var uiTimer = 0;
+function showUi() { stage.classList.add('ui'); clearTimeout(uiTimer); uiTimer = setTimeout(function () { if (st.playing) stage.classList.remove('ui'); }, 3500); }
+function msg(text, spin, btn, cb) {
+  $('mt').textContent = text || ''; $('msp').style.display = spin ? '' : 'none';
+  $('mb').style.display = btn ? '' : 'none'; if (btn) $('mb').textContent = btn; $('mb').onclick = cb || null;
+  $('msg').classList.toggle('on', !!(text || btn));
+}
+function paintSrc() {
+  $('ttl').textContent = (src.title || '') + (src.label ? ' · ' + src.label : '');
+  if (!joined) return;
+  if (src.state === 'loading') msg(epoch > 0 && loadedEpoch >= 0 ? T('change') : T('wait'), true);
+  else if (src.state === 'error') msg(T('err', { m: src.msg || '' }), false);
+  else msg('');
+}
+function paint() {
+  var d = src.duration || 0, p = v.currentTime || 0;
+  $('pp').innerHTML = st.playing ? PAUSE : PLAY;
+  $('tm').textContent = fmt(p) + ' / ' + fmt(d);
+  if (!dragging && d > 0) $('seek').value = Math.round(p / d * 1000);
+  $('cc').classList.toggle('off', !(subOn && ccOn));
+  $('cc').style.display = subOn ? '' : 'none';
+  $('who').textContent = me.name ? T('you', { n: me.name }) : '';
+}
+
+/* ---- video loading ---- */
+function load(startAt) {
+  if (hls) { try { hls.destroy(); } catch (e) {} hls = null; }
+  loadedEpoch = epoch;
+  var url = base + src.playlist;
+  if (window.Hls && Hls.isSupported()) {
+    hls = new Hls({ startPosition: startAt, maxBufferLength: 30, maxMaxBufferLength: 60, enableWorker: true, manifestLoadingMaxRetry: 6, levelLoadingMaxRetry: 6, fragLoadingMaxRetry: 6, manifestLoadingTimeOut: 60000, fragLoadingTimeOut: 60000, levelLoadingTimeOut: 60000, backBufferLength: 30 });
+    hls.on(Hls.Events.ERROR, function (e, d) {
+      if (!d.fatal) return;
+      if (d.type === Hls.ErrorTypes.NETWORK_ERROR) setTimeout(function () { if (hls) hls.startLoad(-1); }, 1500);
+      else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
+      else { load(expected()); }
+    });
+    hls.loadSource(url); hls.attachMedia(v);
+  } else {
+    v.src = url;
+    var once = function () { v.removeEventListener('loadedmetadata', once); try { v.currentTime = startAt; } catch (e) {} };
+    v.addEventListener('loadedmetadata', once);
+  }
+}
+function maybeLoad() {
+  if (!joined || src.state !== 'ready' || !src.playlist) return;
+  if (loadedEpoch !== epoch) load(expected());
+}
+
+/* ---- follow the room ---- */
+var tryingPlay = false, stallSince = 0;
+function follow() {
+  if (!joined || src.state !== 'ready' || loadedEpoch !== epoch) return;
+  var exp = expected(), ct = v.currentTime, d = ct - exp, t = Date.now();
+  if (st.playing) {
+    if (v.paused && !tryingPlay && v.readyState >= 1) {
+      tryingPlay = true;
+      var pr = v.play(); if (pr && pr.catch) pr.catch(function () { msg(T('tap'), false, T('join'), function () { msg(''); v.play(); }); });
+      setTimeout(function () { tryingPlay = false; }, 800);
+    }
+    // while the video is starved for data a seek would only restart the transcoder: wait, then catch up when it resumes
+    if (v.readyState < 3) { if (!stallSince) stallSince = t; } else stallSince = 0;
+    var starving = stallSince && t - stallSince < 8000;
+    if (Math.abs(d) > 1.0 && t - lastHardSeek > 2500 && v.readyState >= 1 && !starving) { lastHardSeek = t; v.currentTime = Math.min(exp + 0.3, src.duration || 1e9); v.playbackRate = 1; }
+    else if (Math.abs(d) > 0.12 && !v.seeking) v.playbackRate = Math.max(0.9, Math.min(1.1, 1 - d * 0.5));
+    else if (v.playbackRate !== 1) v.playbackRate = 1;
+  } else {
+    if (!v.paused) v.pause();
+    if (Math.abs(d) > 0.25 && v.readyState >= 1 && t - lastHardSeek > 800) { lastHardSeek = t; v.currentTime = exp; }
+    if (v.playbackRate !== 1) v.playbackRate = 1;
+  }
+}
+setInterval(follow, 250);
+setInterval(function () { paint(); renderCue(); fetchCues(); }, 250);
+v.addEventListener('waiting', function () {});
+
+/* ---- subtitles (the cues the TV chose) ---- */
+function fetchCues() {
+  if (!subOn || !joined) return;
+  var ct = expected(), t = Date.now(), key = String(subOn);
+  if (t - cueFetchedAt < 8000 && key === cueKey) return;
+  cueFetchedAt = t; cueKey = key;
+  fetch(base + 'subs?from=' + Math.max(0, Math.floor(ct - 5)) + '&to=' + Math.floor(ct + 75), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
+    if (!j.on) { subOn = false; cues = []; return; }
+    var have = {}; cues.forEach(function (c) { have[c[0] + '|' + c[2]] = 1; });
+    (j.cues || []).forEach(function (c) { if (!have[c[0] + '|' + c[2]]) cues.push(c); });
+    cues = cues.filter(function (c) { return c[1] > ct - 60; });
+  }).catch(function () {});
+}
+var curCue = null;
+function renderCue() {
+  var txt = '';
+  if (subOn && ccOn) { var p = v.currentTime || 0; for (var i = 0; i < cues.length; i++) if (p >= cues[i][0] && p < cues[i][1]) { txt = cues[i][2]; break; } }
+  if (txt !== curCue) { curCue = txt; var s = $('sub'); s.textContent = ''; if (txt) { var sp = document.createElement('span'); sp.textContent = txt; s.appendChild(sp); } }
+}
+
+/* ---- commands ---- */
+function send(a, pos) {
+  // optimistic local apply; the echo from the server then sets the authoritative state
+  var p = pos == null ? v.currentTime : pos;
+  if (a === 'play') st = { playing: true, pos: p, at: serverNow() };
+  else if (a === 'pause') st = { playing: false, pos: p, at: serverNow() };
+  else st = { playing: st.playing, pos: p, at: serverNow() };
+  lastHardSeek = 0; follow(); paint();
+  fetch(base + 'cmd', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ a: a, pos: p, cid: cid, name: me.name, lang: L }) }).catch(function () {});
+}
+$('pp').onclick = function (e) { e.stopPropagation(); send(st.playing ? 'pause' : 'play'); showUi(); };
+$('seek').oninput = function () { dragging = true; var d = src.duration || 0; $('tm').textContent = fmt($('seek').value / 1000 * d) + ' / ' + fmt(d); };
+$('seek').onchange = function () { dragging = false; send('seek', $('seek').value / 1000 * (src.duration || 0)); showUi(); };
+$('cc').onclick = function (e) { e.stopPropagation(); ccOn = !ccOn; showUi(); };
+$('fs').onclick = function (e) {
+  e.stopPropagation();
+  var el = stage;
+  if (document.fullscreenElement || document.webkitFullscreenElement) { (document.exitFullscreen || document.webkitExitFullscreen).call(document); }
+  else if (el.requestFullscreen) el.requestFullscreen(); else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen(); else if (v.webkitEnterFullscreen) v.webkitEnterFullscreen();
+};
+stage.addEventListener('click', function (e) { if (e.target === v || e.target === stage) { if (stage.classList.contains('ui') && st.playing) stage.classList.remove('ui'); else showUi(); } });
+stage.addEventListener('mousemove', showUi);
+document.addEventListener('keydown', function (e) {
+  if (e.key === ' ' || e.key === 'k') { e.preventDefault(); send(st.playing ? 'pause' : 'play'); }
+  else if (e.key === 'ArrowLeft') send('seek', Math.max(0, expected() - 10));
+  else if (e.key === 'ArrowRight') send('seek', expected() + 10);
+  else if (e.key === 'f') $('fs').onclick(e);
+  showUi();
+});
+
+/* ---- events from the server ---- */
+function onMsg(m) {
+  if (m.t === 'snap') {
+    if (m.now) { var o = m.now - Date.now(); if (rttBest > 1e8) off = o; }
+    owner = m.owner || owner; if (m.you) me = m.you;
+    var changed = m.epoch !== epoch; epoch = m.epoch;
+    st = { playing: m.playing, pos: m.pos, at: m.at };
+    src = m.source; src.state = src.state || 'loading';
+    subOn = !!(m.sub && m.sub.id); if (!subOn) cues = [];
+    if (changed) cues = [];
+    if (!joined) { msg(T('joinMsg', { o: owner, t: src.title || '' }), false, T('join'), function () { joined = true; msg(''); try { v.muted = false; var p = v.play(); if (p && p.catch) p.catch(function () {}); v.pause(); } catch (e) {} paintSrc(); maybeLoad(); showUi(); }); $('mt').textContent = T('joinMsg', { o: owner, t: src.title || '' }); }
+    paintSrc(); maybeLoad(); $('net').style.display = 'none';
+  } else if (m.t === 'cmd') {
+    st = { playing: m.playing, pos: m.pos, at: m.at }; lastHardSeek = 0;
+    if (!m.by || m.by.cid !== cid) {
+      var nm = m.by ? m.by.name : '?';
+      toast(m.a === 'play' ? T('played', { n: nm }) : m.a === 'pause' ? T('paused', { n: nm }) : T('seeked', { n: nm, p: fmt(m.pos) }));
+    }
+    follow(); showUi();
+  } else if (m.t === 'sync') {
+    st = { playing: m.playing, pos: m.pos, at: m.at };
+  } else if (m.t === 'source') {
+    epoch = m.epoch; src.state = m.state; src.title = m.title || src.title; src.label = m.label != null ? m.label : src.label; src.msg = m.msg;
+    if (m.state === 'ready') { src.duration = m.duration; src.playlist = m.playlist; if (m.pos != null) st = { playing: m.playing, pos: m.pos, at: m.at }; }
+    cues = []; cueFetchedAt = -1e9; paintSrc(); maybeLoad();
+  } else if (m.t === 'sub') {
+    subOn = !!m.on; cues = []; cueFetchedAt = -1e9;
+  } else if (m.t === 'join') { toast(T('joined', { n: m.name }));
+  } else if (m.t === 'leave') { toast(T('left', { n: m.name }));
+  } else if (m.t === 'closed') {
+    closed = true; if (es) es.close(); try { v.pause(); } catch (e) {} msg(T('closed'), false);
+  }
+}
+var es = null, closed = false;
+function connect() {
+  es = new EventSource(base + 'events?cid=' + encodeURIComponent(cid) + '&lang=' + L + (me.name ? '&name=' + encodeURIComponent(me.name) : ''));
+  es.onmessage = function (e) { try { onMsg(JSON.parse(e.data)); } catch (x) {} };
+  es.onopen = function () { $('net').style.display = 'none'; ping(3); };
+  es.onerror = function () {
+    if (closed) return;
+    $('net').textContent = T('reconnecting'); $('net').style.display = 'block';
+    if (es.readyState === 2) { // browser gave up (e.g. HTTP 403/404): check why
+      fetch(base + 'time').then(function (r) { if (r.status === 404) { closed = true; msg(T('gone'), false); } else setTimeout(connect, 2000); }).catch(function () { setTimeout(connect, 2000); });
+    }
+  };
+}
+connect();
+window.addEventListener('online', function () { ping(3); });
+document.addEventListener('visibilitychange', function () { if (!document.hidden) { lastHardSeek = 0; ping(3); follow(); } });
+msg(T('wait'), true);
+})();
+</script>
+</body>
+</html>
