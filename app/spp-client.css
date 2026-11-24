@@ -1,0 +1,92 @@
+/* Responsive stage for the Windows / Android clients (loaded by spp-client.js only when SPP_CLIENT.client is set; the TV never
+   loads it). The stage is 1080 high and `width = 1080 * aspect` wide (set on <body> by spp-client.js), so everything that was
+   pinned to the 1920 px grid is anchored to the right edge here, and app.js computes counts (cards per row, grid columns)
+   from SW. Chromium here is modern: calc() and friends are fine. */
+html.spp #root{right:0;width:auto}
+html.spp #root.pl,html.spp.norail #root{left:0}
+html.spp .hero,html.spp .hero2,html.spp #vs,html.spp .row,html.spp .clip{width:auto;right:0}
+html.spp .sf{width:auto;right:50px}
+html.spp .legend{width:auto;right:50px}
+/* detail */
+html.spp .dbg,html.spp .dov{width:auto;right:0}
+html.spp .pnl{left:auto;right:0}
+html.spp .dtitle{width:auto;right:700px}
+html.spp .dmeta,html.spp .dgen{width:auto;right:680px}
+html.spp .ddesc{width:auto;right:720px}
+html.spp .dbtns{width:auto;right:664px;white-space:normal;height:auto}
+html.spp .dbtns .btn{margin-bottom:12px}
+/* settings */
+html.spp .setwrap{width:auto;right:720px;max-width:1080px}
+html.spp .setwrap>.ab{width:100%!important}
+html.spp .srow{width:calc(100% - 20px)}
+html.spp #subprev{left:auto;right:50px}
+html.spp .note{width:auto;right:50px}
+/* modal */
+html.spp #modal{width:auto;height:auto;right:0;bottom:0}
+html.spp #modal .box{left:50%;margin-left:-400px}
+html.spp #modal.r100 .box{margin-left:-450px;height:auto;padding-bottom:34px}
+html.spp #modal.r100.pl .box{left:160px;margin-left:0}
+/* player */
+html.spp #spp-video{width:100%;height:100%}
+html.spp .spinbox{left:50%;margin-left:-36px}
+html.spp .ico{left:50%;margin-left:-80px}
+html.spp #osd{width:auto;height:auto;right:0;bottom:0;pointer-events:none}
+html.spp .otop,html.spp .obot{width:auto;right:0}
+html.spp .ot{width:auto;right:420px}
+html.spp .obar{width:auto;right:100px}
+html.spp .ctl,html.spp .obhit,html.spp #osd .ctl{pointer-events:auto}
+html.spp .obhit{position:absolute;left:100px;right:100px;top:866px;height:68px;cursor:pointer}
+html.spp .ppnl{left:auto;right:0}
+html.spp .err{left:50%;margin-left:-500px}
+html.spp .spp-ov{width:auto;height:auto;right:0;bottom:0}
+html.spp .spp-ov .c{left:50%;margin-left:-600px}
+html.spp.idle,html.spp.idle *{cursor:none!important}
+/* clickable things */
+html.spp.in-mouse .pc,html.spp.in-mouse .gc,html.spp.in-mouse .btn,html.spp.in-mouse .ri,html.spp.in-mouse .srow,html.spp.in-mouse .ep,html.spp.in-mouse .sr,
+html.spp.in-mouse .pi,html.spp.in-mouse .kk,html.spp.in-mouse .rchip,html.spp.in-mouse .season,html.spp.in-mouse .ctl,html.spp.in-mouse .kbt,html.spp.in-mouse .skip,html.spp.in-mouse .nx{cursor:pointer}
+/* touch: no focus ring left behind on cards (there is no hover), bigger hit areas */
+html.spp.in-touch .pc.f,html.spp.in-touch .gc.f{transform:none}
+html.spp.in-touch .f>.pimg,html.spp.in-touch .f>.gimg{border-color:transparent}
+html.spp.in-touch .ri{height:112px}
+html.spp.in-touch .ctl{width:104px;height:104px;border-radius:52px;padding-top:30px;top:914px}
+html.spp.in-touch .obhit{top:850px;height:100px}
+html.spp.in-touch .pi{height:84px;line-height:76px}
+/* search field: a real <input> */
+.sf input{background:transparent;border:0;outline:0;color:#fff;font:inherit;width:calc(100% - 190px);height:76px;line-height:76px;vertical-align:middle;padding:0;margin:0}
+.sf input::placeholder{color:#6c688c;opacity:1}
+.sf .ic{vertical-align:middle}
+.kbt{position:absolute;right:20px;top:12px;width:88px;height:56px;line-height:50px;border:3px solid #38335a;border-radius:28px;text-align:center;color:#9b97b8;font-size:26px;font-weight:700}
+.kbt.on{background:#7b5cff;border-color:#7b5cff;color:#fff}
+.kbt.f,.kbt:hover{border-color:#fff}
+/* rating: slider + number field */
+#modal.r100 .rbar{display:none}
+#modal.r100 .rrow{margin:0 auto;width:640px;height:56px;position:relative}
+#modal.r100 .rrow input[type=range]{-webkit-appearance:none;appearance:none;width:520px;height:14px;margin:21px 0 0;background:#38335a;border-radius:7px;outline:0;float:left}
+#modal.r100 .rrow input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:34px;height:34px;border-radius:17px;background:#fff;border:4px solid #7b5cff;cursor:pointer}
+#modal.r100 .rrow input[type=number]{float:right;width:100px;height:56px;border-radius:28px;border:3px solid #38335a;background:#0f0d1a;color:#fff;font:inherit;font-size:30px;text-align:center;outline:0;-moz-appearance:textfield}
+#modal.r100 .rrow input[type=number]:focus,#modal.r100 .rrow input[type=range]:focus{border-color:#7b5cff}
+#modal.r100 .rrow input::-webkit-inner-spin-button{display:none}
+#modal.r100 .rbtns{margin-top:22px}
+#modal.r100 .rbtns .btn{margin:0 12px}
+.stars span{cursor:pointer}
+.stars span.on{color:#f5c518}
+#modal .r1.lnk{cursor:pointer;text-decoration:underline}
+/* connect screen input is a plain field too */
+html.spp.in-touch .otm{left:226px}
+/* narrow stage (< 1850 logical px: 16:10 and squarer windows) */
+html.narrow .ddesc{font-size:24px;line-height:32px;height:196px}
+html.narrow .dbtns{top:726px}
+html.narrow .dbtns .btn{height:68px;line-height:60px;padding:0 18px;font-size:23px;margin-right:8px}
+html.narrow .dstar{top:910px}
+html.narrow .setwrap{right:540px;max-width:none}
+html.narrow .srow .k{font-size:22px;max-width:62%;white-space:nowrap}
+html.narrow .srow .v{font-size:22px}
+html.narrow #subprev{right:30px;transform:scale(.77);transform-origin:100% 0}
+html.narrow .legend{font-size:20px}
+/* wide stage */
+html.spp .dtitle,html.spp .dmeta,html.spp .dgen,html.spp .ddesc{max-width:1060px}
+html.wide #subprev{left:1160px;right:auto}
+/* overlays that must not eat clicks meant for what is under them */
+html.spp .toast,html.spp .spinbox,html.spp .ico,html.spp #sub{pointer-events:none}
+html.spp.in-mouse .ctl:hover{background:rgba(255,255,255,.18)}
+html.spp.in-mouse .ctl.f:hover{background:#7b5cff}

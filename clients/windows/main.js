@@ -36,10 +36,13 @@ function create() {
     if (i.key === 'F11' || (i.alt && i.key === 'Enter')) { win.setFullScreen(!win.isFullScreen()); e.preventDefault(); }
     else if (i.key === 'F12' && i.control) win.webContents.toggleDevTools();
   });
+  // the mouse "back" button (and the keyboard's browser-back key) is Back inside the app
+  win.on('app-command', (e, cmd) => { if (cmd === 'browser-backward') { e.preventDefault(); win.webContents.executeJavaScript("window.SPP_CLIENT&&SPP_CLIENT.back&&SPP_CLIENT.back()").catch(() => {}); } });
   win.webContents.setWindowOpenHandler((d) => { shell.openExternal(d.url); return { action: 'deny' }; });
   win.on('closed', () => { win = null; });
 }
 ipcMain.on('spp-exit', () => app.quit());
+ipcMain.on('spp-fullscreen', () => { if (win) win.setFullScreen(!win.isFullScreen()); });
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 app.whenReady().then(create);
 app.on('window-all-closed', () => app.quit());

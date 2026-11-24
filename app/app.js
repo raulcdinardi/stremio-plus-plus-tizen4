@@ -8,6 +8,16 @@ var BASE = '';
 var NOOP = function () {};
 var $root = document.getElementById('root');
 var $modal = document.getElementById('modal');
+/* [client] Responsive mode: only the Windows / Android clients (SPP_CLIENT.client set by spp-client.js). On the TV
+   (webapis.avplay present, or no client type) RESP is false and every `RESP` branch below is skipped, so the TV keeps
+   the fixed 1920x1080 layout. SW = logical stage width (1080 * aspect, set by spp-client.js), RW = width of #root (stage - 110 rail). */
+var RESP = !(window.webapis && window.webapis.avplay) && !!(window.SPP_CLIENT && window.SPP_CLIENT.client);
+var CLI = RESP ? window.SPP_CLIENT.client : '';
+var SW = RESP && window.SPP_CLIENT.stageW ? window.SPP_CLIENT.stageW : 1920;
+var RW = SW - 110;
+function inputMode() { return RESP ? window.SPP_CLIENT.input || '' : ''; }
+function up(el, cls) { while (el && el !== document.body) { if (el.classList && el.classList.contains(cls)) return el; el = el.parentNode; } return null; }
+function inside(el, anc) { while (el) { if (el === anc) return true; el = el.parentNode; } return false; }
 
 /* ---------- utils ---------- */
 function h(tag, cls, text) {
@@ -118,7 +128,9 @@ var I18N = {
     'sync.running': 'Automática: analisando… (o vídeo segue)', 'sync.on': 'Automática: ligada', 'sync.alreadyOk': ' · já estava certa', 'sync.onTail': ' · OK desliga',
     'sync.off': 'Automática: desligada · OK liga', 'sync.unsure': 'Automática: não tive certeza · OK tenta de novo', 'sync.failed': 'Automática: falhou ({0}) · OK tenta de novo',
     'sync.fine': '◀  {0} (manual)  ▶     passo 0,1 s', 'sync.coarse': '◀  {0} (manual)  ▶     passo 1 s', 'sync.zero': 'Zerar ajuste manual',
-    'tt.audio': 'Trocando áudio…', 'tt.source': 'Trocando de fonte…'
+    'tt.audio': 'Trocando áudio…', 'tt.source': 'Trocando de fonte…',
+    'r100.hintPtr': 'Arraste, digite ou use as setas  ·  Enter salva  ·  Esc pula', 'r100.save': 'Salvar', 'r100.skip': 'Pular',
+    'kp.toggle': 'Teclado na tela', 'pl.muted': 'Som desligado', 'pl.unmuted': 'Som ligado', 'pl.volume': 'Volume {0}%'
   },
   en: {
     'nav.home': 'Home', 'nav.search': 'Search', 'nav.library': 'Library', 'nav.history': 'History', 'nav.settings': 'Settings',
@@ -186,7 +198,9 @@ var I18N = {
     'sync.running': 'Automatic: analyzing… (video keeps playing)', 'sync.on': 'Automatic: on', 'sync.alreadyOk': ' · in sync', 'sync.onTail': ' · OK turns off',
     'sync.off': 'Automatic: off · OK turns on', 'sync.unsure': 'Automatic: not sure · OK tries again', 'sync.failed': 'Automatic: failed ({0}) · OK tries again',
     'sync.fine': '◀  {0} (manual)  ▶     step 0.1 s', 'sync.coarse': '◀  {0} (manual)  ▶     step 1 s', 'sync.zero': 'Reset manual adjustment',
-    'tt.audio': 'Switching audio…', 'tt.source': 'Switching source…'
+    'tt.audio': 'Switching audio…', 'tt.source': 'Switching source…',
+    'r100.hintPtr': 'Drag, type or use the arrows  ·  Enter saves  ·  Esc skips', 'r100.save': 'Save', 'r100.skip': 'Skip',
+    'kp.toggle': 'On-screen keyboard', 'pl.muted': 'Muted', 'pl.unmuted': 'Sound on', 'pl.volume': 'Volume {0}%'
   }
 };
 function t(key) {
@@ -275,7 +289,7 @@ function keyName(e, editing) {
     case 37: return 'left'; case 38: return 'up'; case 39: return 'right'; case 40: return 'down';
     case 13: return 'enter';
     case 10009: case 27: return 'back';
-    case 8: return editing ? null : 'back';
+    case 8: return editing ? null : (RESP && modalState && modalState.key ? 'minus' : 'back'); // rating prompt: Backspace erases a digit
     case 10252: case 32: return 'toggle';
     case 415: return 'play'; case 19: return 'pause'; case 413: return 'stop';
     case 417: return 'ff'; case 412: return 'rw';
@@ -391,13 +405,26 @@ function openRate100(o) {
   box.appendChild(h('div', 'rs ell', [o.name, o.label].filter(Boolean).join('  ·  ')));
   var num = h('div', 'rn'), bar = h('div', 'rbar'), fill = h('div', 'rfill');
   bar.appendChild(fill); box.appendChild(num); box.appendChild(bar);
-  box.appendChild(h('div', 'rh', t(digits ? 'r100.hintDigits' : 'r100.hintDpad')));
+  var sl = null, ni = null, ptr = RESP && inputMode() !== 'pad'; // [client] mouse / touch / keyboard: slider + number field + buttons
+  if (ptr) {
+    var rr = h('div', 'rrow');
+    sl = document.createElement('input'); sl.type = 'range'; sl.min = 0; sl.max = 100; sl.step = 1;
+    ni = document.createElement('input'); ni.type = 'number'; ni.min = 0; ni.max = 100; ni.step = 1;
+    rr.appendChild(sl); rr.appendChild(ni); box.appendChild(rr);
+  }
+  box.appendChild(h('div', 'rh', t(ptr ? 'r100.hintPtr' : digits ? 'r100.hintDigits' : 'r100.hintDpad')));
   var noteEl = h('div', 'rnote'); box.appendChild(noteEl);
+  var bSave = null, bSkip = null;
+  if (ptr) {
+    var rb = h('div', 'rbtns'); bSave = h('div', 'btn f', t('r100.save')); bSkip = h('div', 'btn', t('r100.skip'));
+    rb.appendChild(bSave); rb.appendChild(bSkip); box.appendChild(rb);
+  }
   $modal.appendChild(box);
   function paint() {
     num.textContent = v == null ? '–' : String(v);
     num.classList[buf ? 'add' : 'remove']('typing');
     fill.style.width = (v || 0) + '%';
+    if (sl) { sl.value = v == null ? 0 : v; if (document.activeElement !== ni) ni.value = v == null ? '' : v; }
   }
   function finish(score) {
     if (done) return; done = true; closeModal();
@@ -419,6 +446,15 @@ function openRate100(o) {
     else if (k === 'back' || k === 'stop') { finish(null); return; }
     paint();
   } };
+  if (ptr) {
+    sl.addEventListener('input', function () { touched = true; buf = ''; v = +sl.value; paint(); });
+    ni.addEventListener('input', function () { touched = true; buf = ''; var n = parseInt(ni.value, 10); v = isNaN(n) ? null : clamp(n, 0, 100); paint(); });
+    ni.addEventListener('blur', function () { ni.value = v == null ? '' : v; });
+    var kk = function (k) { if (k === 'enter') { if (v != null) finish(v); return true; } if (k === 'back') { finish(null); return true; } return false; };
+    sl.__sppKey = kk; ni.__sppKey = kk;
+    bSave.addEventListener('click', function () { if (v != null) finish(v); });
+    bSkip.addEventListener('click', function () { finish(null); });
+  }
   paint();
   if (!known) { // the server may already have a score for it (rated on another device)
     xhr('GET', '/api/rate100?itemId=' + encodeURIComponent(o.itemId) + '&videoId=' + encodeURIComponent(o.videoId), undefined, 3000).then(function (r) {
@@ -556,8 +592,14 @@ function popTo(name) {
   pop();
 }
 
+function route(k, e) { // a key name goes to the open modal, else the rail, else the screen
+  if (modalState) modalKey(k);
+  else if (railFocus) railKey(k);
+  else if (nav.cur) nav.cur.key(k, e);
+}
 var keyStats = [];
 document.addEventListener('keydown', function (e) {
+  if (RESP && !editInput && clientKey(e)) return;
   var k = keyName(e, !!editInput);
   if (!k) return;
   var t0 = performance.now();
@@ -567,17 +609,79 @@ document.addEventListener('keydown', function (e) {
       else if (k === 'back' || k === 'cancel') { e.preventDefault(); endEdit(false); }
       return;
     }
-    if (k === 'other') { if (nav.cur && nav.cur.other) nav.cur.other(e); return; }
+    if (k === 'other') { if (RESP && letterSearch(e)) return; if (nav.cur && nav.cur.other) nav.cur.other(e); return; }
     e.preventDefault();
-    if (modalState) modalKey(k);
-    else if (railFocus) railKey(k);
-    else if (nav.cur) nav.cur.key(k, e);
+    route(k, e);
   } catch (er) { console.error(er); }
   if (window.__measure) { void document.body.offsetWidth; keyStats.push(performance.now() - t0); }
 }, true);
 document.addEventListener('keyup', function (e) {
   if (nav.cur && nav.cur.keyup && !editInput && !modalState) { try { nav.cur.keyup(keyName(e, false), e); } catch (er) {} }
 }, true);
+
+/* =====================================================================
+   [client] Windows / Android only: text fields, mouse and touch, live stage resize. spp-client.js calls these through
+   window.__spp (pointer, modality, restage); the TV never does.
+   ===================================================================== */
+// A text field has the focus (search box, rating number, ...): characters, Backspace, Ctrl+A/C/V and IME stay native;
+// only Enter / Esc / Up / Down are offered to the field's own handler el.__sppKey(k, e), which returns true if it used the key.
+function clientKey(e) {
+  var a = document.activeElement;
+  if (!a || (a.tagName !== 'INPUT' && a.tagName !== 'TEXTAREA')) return false;
+  if (e.isComposing || e.keyCode === 229) return true;
+  var c = e.keyCode, k = c === 27 || c === 10009 ? 'back' : c === 13 ? 'enter' : c === 40 ? 'down' : c === 38 ? 'up' : null;
+  if (k && a.__sppKey && !e.ctrlKey && !e.altKey && !e.metaKey && a.__sppKey(k, e)) e.preventDefault();
+  return true;
+}
+// Typing a letter outside a text field opens Search with it (the new field takes the focus, the key lands in it).
+function letterSearch(e) {
+  if (!e.isTrusted || e.ctrlKey || e.altKey || e.metaKey || !e.key || e.key.length !== 1 || e.key.toLowerCase() === e.key.toUpperCase()) return false;
+  if (modalState || !$modal.classList.contains('hid') || nav.name === 'search' || nav.name === 'player' || nav.name === 'boot' || nav.name === 'connect') return false;
+  nav.stack = []; delete nav.memo.search; mount('search', {});
+  return true;
+}
+function modality(m) { if (nav.cur && nav.cur.modality) nav.cur.modality(m); }
+// logical stage width changed (window resized / rotated): screens whose layout depends on it rebuild when their derived counts changed
+function restage(w) {
+  if (!RESP || w === SW) return;
+  SW = w; RW = SW - 110;
+  var c = nav.cur;
+  if (!c || nav.name === 'boot' || nav.name === 'connect') return;
+  if (c.restage) { c.restage(); return; }
+  if (c.stale && c.stale() && !modalState && $modal.classList.contains('hid') && !editInput) mount(nav.name, nav.params);
+}
+// Mouse / touch. type: 'move' (hover) | 'click' | 'wheel' (d.dx / d.dy = scroll steps, d.swipe = touch) | 'down' / 'drag' / 'drop' (d.x: a screen may
+// capture a drag by returning true from 'down') | 'dblclick'. Each screen maps the element to its own focus index / handler in point().
+function pointer(type, el, d) {
+  if (!RESP || !el) return false;
+  if (type === 'down' || type === 'drag' || type === 'drop') return !!(nav.cur && nav.cur.drag && $modal.classList.contains('hid') && nav.cur.drag(type, el, d));
+  if (el.tagName === 'INPUT' && type !== 'wheel' && type !== 'move') return false; // native: caret, selection, slider drag
+  var open = !$modal.classList.contains('hid');
+  if (open) {
+    if (modalState && !modalState.key) { // yes / no box
+      var bi = modalState.els.indexOf(up(el, 'btn'));
+      if (type === 'move' && bi >= 0 && bi !== modalState.i) { setF(modalState.els[modalState.i], false); modalState.i = bi; setF(modalState.els[bi], true); }
+      else if (type === 'click') { if (bi >= 0) { modalState.i = bi; modalKey('enter'); } else if (el === $modal) modalKey('back'); }
+    } else if (type === 'click' && el === $modal) route('back'); // custom modals (stars, 0-100): the backdrop is Back, the controls have their own listeners
+    return true;
+  }
+  var ri = railEls.indexOf(up(el, 'ri'));
+  if (ri >= 0) {
+    if (type === 'move') { if (!railFocus || railIdx !== ri) { railIdx = ri; railOn(true); } } else if (type === 'click') { railIdx = ri; railKey('enter'); }
+    return true;
+  }
+  if (railFocus && type !== 'wheel') railOn(false);
+  if (nav.cur && nav.cur.point) return !!nav.cur.point(type, el, d);
+  return false;
+}
+// the three grid-like lists share this: element -> index, hover moves the focus, click opens
+function gridPoint(g, type, el, d) {
+  if (type === 'wheel') { if (d.dy) g.scroll(d.dy); return true; }
+  var i = g.hit(el);
+  if (i < 0) return false;
+  if (type === 'move') g.setIdx(i); else if (type === 'click') { g.setIdx(i); g.key('enter'); }
+  return true;
+}
 
 /* ---------- common ui ---------- */
 function msgBox(parent, text, spinner, btnLabel) {
@@ -623,6 +727,12 @@ Screens.boot = function () {
 };
 Screens.connect = function () {
   var inp, zone = 0, msg, els = [];
+  function edit() { startEdit(inp, RESP ? function (commit) { if (commit) tryConnect(inp.value); } : NOOP); }
+  function run() {
+    if (zone === 0) edit();
+    else if (zone === 1) tryConnect(inp.value);
+    else boot();
+  }
   function tryConnect(v) {
     v = (v || '').trim();
     if (!/^https?:\/\//.test(v)) v = 'http://' + v;
@@ -636,7 +746,7 @@ Screens.connect = function () {
     mount: function () {
       $root.appendChild(h('div', 'h1', t('connect.title')));
       var d = h('div', 'ab sec', t('connect.help'));
-      d.style.cssText = 'left:50px;top:150px;width:1700px';
+      d.style.cssText = 'left:50px;top:150px;width:' + (SW - 220) + 'px';
       $root.appendChild(d);
       var input = h('div', 'cin f'); input.style.top = '260px';
       inp = document.createElement('input');
@@ -646,21 +756,27 @@ Screens.connect = function () {
       $root.appendChild(b1);
       var b2 = h('div', 'btn', t('common.retry')); b2.style.cssText = 'position:absolute;left:290px;top:400px;margin:0';
       $root.appendChild(b2);
-      msg = h('div', 'ab sec', ''); msg.style.cssText = 'left:50px;top:520px;width:1700px';
+      msg = h('div', 'ab sec', ''); msg.style.cssText = 'left:50px;top:520px;width:' + (SW - 220) + 'px';
       $root.appendChild(msg);
       els = [input, b1, b2];
       inp.addEventListener('blur', function () { if (editInput === inp) endEdit(false); });
+      if (RESP && inputMode() !== 'pad' && CLI !== 'android') edit(); // [client] type the address right away, Enter connects
     },
     unmount: NOOP,
+    point: function (type, el) { // [client]
+      if (el === inp) return false;
+      for (var i = 0; i < els.length; i++) if (inside(el, els[i])) {
+        if (type === 'move') { zone = i; els.forEach(function (e, j) { setF(e, j === zone); }); }
+        else if (type === 'click') { zone = i; els.forEach(function (e, j) { setF(e, j === zone); }); run(); }
+        return true;
+      }
+      return false;
+    },
     key: function (k) {
       if (k === 'up') zone = 0; else if (k === 'down') zone = Math.max(zone, 1);
       else if (k === 'left' && zone > 1) zone--; else if (k === 'right' && zone === 1) zone = 2;
       if (k === 'up' || k === 'down' || k === 'left' || k === 'right') { els.forEach(function (e, i) { setF(e, i === zone); }); return; }
-      if (k === 'enter') {
-        if (zone === 0) startEdit(inp, NOOP);
-        else if (zone === 1) tryConnect(inp.value);
-        else boot();
-      }
+      if (k === 'enter') run();
     }
   };
 };
@@ -703,7 +819,13 @@ function makeGrid(parent, o) {
   wrap.style.cssText = 'left:' + o.left + 'px;top:' + o.top + 'px;width:' + o.width + 'px;height:' + o.height + 'px';
   var strip = h('div', 'strip');
   wrap.appendChild(strip); parent.appendChild(wrap);
-  var items = [], gi = 0, nodes = {}, markEl = null, active = true, cols = o.cols;
+  var items = [], gi = 0, nodes = {}, markEl = null, active = true, cols = o.cols, sr = 0; // sr: first visible row (RESP only: scrolling is independent of the focus)
+  function vrows() { return Math.max(1, Math.floor(o.height / o.sy)); }
+  function ens() { // [client] keep the focused row visible after a key move
+    if (!RESP) return;
+    var r = Math.floor(gi / cols), vr = vrows();
+    if (r < sr) sr = r; else if (r > sr + vr - 1) sr = r - vr + 1;
+  }
   function make(i) {
     var it = items[i], c = h('div', 'gc');
     c.style.width = o.cw + 'px';
@@ -719,18 +841,23 @@ function makeGrid(parent, o) {
   function top() { return Math.max(0, Math.floor(gi / cols) - 1); }
   function render() {
     if (!items.length) { clearNodes(nodes); return; }
-    var t = top();
+    var t = RESP ? sr : top();
     sync(nodes, strip, Math.max(0, (t - 1) * cols), Math.min(items.length - 1, (t + 3) * cols - 1), make);
     tx(strip, 0, -t * o.sy);
   }
   function mark() { setF(markEl, false); markEl = active ? nodes[gi] || null : null; setF(markEl, true); }
   return {
-    set: function (list) { items = list || []; gi = 0; clearNodes(nodes); render(); mark(); },
+    el: wrap,
+    set: function (list) { items = list || []; gi = 0; sr = 0; clearNodes(nodes); render(); mark(); },
     count: function () { return items.length; },
     setActive: function (b) { active = b; mark(); },
     cur: function () { return items[gi]; },
     row: function () { return Math.floor(gi / cols); },
-    setRow: function (r) { gi = clamp(r * cols, 0, Math.max(0, items.length - 1)); render(); mark(); },
+    setRow: function (r) { gi = clamp(r * cols, 0, Math.max(0, items.length - 1)); ens(); render(); mark(); },
+    hit: function (el) { var c = up(el, 'gc'); if (c) for (var k in nodes) if (nodes[k] === c) return +k; return -1; }, // [client]
+    setIdx: function (i) { gi = i; mark(); },
+    scroll: function (n) { sr = clamp(sr + n, 0, Math.max(0, Math.ceil(items.length / cols) - vrows())); render(); mark(); },
+    remove: function () { clearNodes(nodes); removeNode(wrap); },
     // returns 'left' / 'up' / 'right' when focus tries to leave the grid
     key: function (k) {
       var r = Math.floor(gi / cols), c = gi % cols, n = items.length;
@@ -741,7 +868,7 @@ function makeGrid(parent, o) {
       else if (k === 'chdn') gi = Math.min(n - 1, gi + cols * 2);
       else if (k === 'chup') gi = Math.max(0, gi - cols * 2);
       else if (k === 'enter') { if (items[gi] && o.onOpen) o.onOpen(items[gi]); return 'enter'; }
-      render(); mark(); return null;
+      ens(); render(); mark(); return null;
     },
     destroy: function () { clearNodes(nodes); }
   };
@@ -810,9 +937,20 @@ function makeStreamList(parent, o) {
     });
   }
   load(false);
-  return {
+  var api = {
     setActive: function (b) { active = b; mark(); },
     reload: function () { load(true); },
+    scroll: function (n) { if (ready) { off = clamp(off + n, 0, Math.max(0, rows.length - VIS)); draw(); } }, // [client]
+    point: function (type, el) {
+      if (loadMsg && loadMsg.btn && inside(el, loadMsg.btn)) { if (type === 'click') load(true); return true; }
+      var e = up(el, 'sr'), i = -1;
+      if (e) for (var k in nodes) if (nodes[k] === e) i = +k;
+      if (i < 0) return false;
+      if (!ready) return true;
+      idx = i; mark();
+      if (type === 'click') api.key('enter');
+      return true;
+    },
     // returns 'left' when focus leaves to the left; true if consumed
     key: function (k) {
       if (k === 'left') return 'left';
@@ -829,6 +967,7 @@ function makeStreamList(parent, o) {
     },
     destroy: function () { dead = true; clearNodes(nodes); }
   };
+  return api;
 }
 
 /* =====================================================================
@@ -838,18 +977,20 @@ Screens.home = function () {
   var ROW_KEYS = { continue: 'row.continue', movies: 'row.movies', series: 'row.series', anime: 'row.anime' };
   var M = nav.memo.home || (nav.memo.home = { r: 0, c: {} });
   var R = [], fr = M.r, vs, heroImg, heroSrc = '', prefTimer = 0, heroTimer = 0, dead = false, loadMsg = null, markEl = null;
-  var STRIDE = 198, ROWH = 440, VIS = 8, LEAD = 3;
+  var STRIDE = 198, ROWH = 440, VIS = RESP ? visFor() : 8, LEAD = 3, sr = 0; // sr: first visible row (RESP: the mouse wheel scrolls independently of the focus)
+  function visFor() { return Math.max(3, Math.floor((RW - 50) / STRIDE)); }
 
   function rowTitle(d) { var k = ROW_KEYS[d.id]; return k ? t(k) : d.title; } // known rows follow the app language; others keep the server's title
   function build(rows) {
     R = []; var y = 0;
     rows.forEach(function (r) {
       if (!r.items || !r.items.length) return;
-      R.push({ d: r, top: y, el: null, strip: null, nodes: {}, col: Math.min(M.c[r.id] || 0, r.items.length - 1) });
+      R.push({ d: r, top: y, el: null, strip: null, nodes: {}, col: Math.min(M.c[r.id] || 0, r.items.length - 1), off: 0 });
       y += ROWH;
     });
     if (fr >= R.length) fr = R.length - 1;
     if (fr < 0) fr = 0;
+    if (RESP) { sr = fr; R.forEach(function (r) { r.off = clamp(r.col - LEAD, 0, Math.max(0, r.d.items.length - VIS)); }); }
   }
   function makeCard(r, i) {
     var it = r.d.items[i], cont = r.d.kind === 'continue';
@@ -883,16 +1024,16 @@ Screens.home = function () {
   function updateRow(i) {
     var r = R[i]; if (!r.el) return;
     var n = r.d.items.length, focused = i === fr;
-    var off = clamp(r.col - LEAD, 0, Math.max(0, n - VIS));
+    var off = RESP ? r.off : clamp(r.col - LEAD, 0, Math.max(0, n - VIS));
     var buf = focused ? 3 : 1;
     sync(r.nodes, r.strip, Math.max(0, off - buf), Math.min(n - 1, off + VIS + buf - 1), function (j) { return makeCard(r, j); });
     tx(r.strip, -off * STRIDE, 0);
   }
   function layout() {
     for (var i = 0; i < R.length; i++) {
-      if (Math.abs(i - fr) <= 1) { buildRow(i); updateRow(i); } else unbuildRow(i);
+      if (Math.abs(i - fr) <= 1 || (RESP && Math.abs(i - sr) <= 2)) { buildRow(i); updateRow(i); } else unbuildRow(i);
     }
-    tx(vs, 0, -R[fr].top);
+    tx(vs, 0, -R[RESP ? sr : fr].top);
     mark();
   }
   function setHero(it) {
@@ -922,12 +1063,22 @@ Screens.home = function () {
     var r = R[fr]; c = clamp(c, 0, r.d.items.length - 1);
     if (c === r.col) return;
     setF(markEl, false); r.col = c; M.c[r.d.id] = c;
+    if (RESP) { if (c < r.off) r.off = c; else if (c > r.off + VIS - 1) r.off = c - VIS + 1; }
     updateRow(fr); mark();
   }
   function moveRow(n) {
     if (n < 0 || n > R.length - 1) return;
     setF(markEl, false);
-    fr = n; M.r = fr; layout();
+    fr = n; M.r = fr;
+    if (RESP) { if (fr < sr) sr = fr; else if (fr > sr + 1) sr = fr - 1; }
+    layout();
+  }
+  function focusAt(ri, ci) { // [client] hover / click: focus the card under the pointer without scrolling anything
+    var r = R[ri];
+    if (ri === fr && ci === r.col) return;
+    setF(markEl, false);
+    if (ri !== fr) { fr = ri; M.r = fr; layout(); }
+    R[fr].col = ci; M.c[R[fr].d.id] = ci; updateRow(fr); mark();
   }
   function clearMsg() { if (loadMsg) { removeNode(loadMsg.el); loadMsg = null; } }
   function load(force) {
@@ -980,6 +1131,26 @@ Screens.home = function () {
         case 'chdn': moveCol(R[fr].col + VIS); break;
         case 'enter': activate(); break;
       }
+    },
+    stale: function () { return visFor() !== VIS; },
+    point: function (type, el, d) { // [client]
+      if (!R.length) { if (type === 'click' && up(el, 'btn')) load(true); return true; }
+      var i, k, row = up(el, 'row');
+      if (type === 'wheel') {
+        var wr = fr; for (i = 0; i < R.length; i++) if (row && R[i].el === row) wr = i;
+        if (d.dx) { var rr = R[wr]; rr.off = clamp(rr.off + d.dx, 0, Math.max(0, rr.d.items.length - VIS)); updateRow(wr); }
+        else if (d.dy) { sr = clamp(sr + d.dy, 0, Math.max(0, R.length - 2)); layout(); }
+        return true;
+      }
+      var pc = up(el, 'pc');
+      if (!pc) return false;
+      for (i = 0; i < R.length; i++) for (k in R[i].nodes) {
+        if (R[i].nodes[k] !== pc) continue;
+        focusAt(i, +k);
+        if (type === 'click') activate();
+        return true;
+      }
+      return false;
     }
   };
 };
@@ -990,6 +1161,8 @@ Screens.home = function () {
 function listScreen(key, titleKey, path, emptyKey, onOpen) {
   return function () {
   var grid, dead = false, msg = null, M = nav.memo[key] || (nav.memo[key] = { row: 0 });
+  function colsFor() { return RESP ? Math.max(3, Math.floor((RW - 50) / 198)) : 8; }
+  var haveCols = colsFor();
   function clearMsg() { if (msg) { removeNode(msg.el); msg = null; } }
   function load(force) {
     clearMsg();
@@ -1005,7 +1178,7 @@ function listScreen(key, titleKey, path, emptyKey, onOpen) {
   return {
     mount: function () {
       $root.appendChild(h('div', 'h1', t(titleKey)));
-      grid = makeGrid($root, { cols: 8, sx: 198, sy: 350, cw: 170, ch: 255, left: 26, top: 140, width: 1784, height: 940,
+      grid = makeGrid($root, { cols: haveCols, sx: 198, sy: 350, cw: 170, ch: 255, left: 26, top: 140, width: RW - 26, height: 940,
         onOpen: onOpen || function (it) { push('detail', { type: it.type, id: it.id, item: it }); } });
       load(false);
     },
@@ -1015,7 +1188,9 @@ function listScreen(key, titleKey, path, emptyKey, onOpen) {
       if (!grid.count()) { if (k === 'enter') load(true); else if (k === 'left') focusRail(); return; }
       var r = grid.key(k);
       if (r === 'left') focusRail();
-    }
+    },
+    stale: function () { return colsFor() !== haveCols; },
+    point: function (type, el, d) { return gridPoint(grid, type, el, d); } // [client]
   };
   };
 }
@@ -1042,16 +1217,24 @@ function kbModeNow() {
   return srvSet('kbMode', 'grid') === 'phone' ? 'phone' : 'grid';
 }
 Screens.search = function () {
-  var M = nav.memo.search || (nav.memo.search = { q: '', zone: 'f', kr: 0, kc: 0 });
+  var M = nav.memo.search || (nav.memo.search = { q: '', zone: 'f', kr: 0, kc: 0, kbPin: null });
   var num = !!M.num, kbBox = null; // num: phone keys type digits directly
   var kbm = kbModeNow(); // 'phone' | 'grid'
   var q = M.q, zone = M.zone, kr = M.kr, kc = M.kc, dead = false, seq = 0, timer = 0, lastQ = null;
   var pend = null; // {key, i, ch}
   var pendTimer = 0;
   var field, textEl, ime, kbEls = [], kbKeys = [], legend, capEl, info, grid, chipEls = [], ci = 0, markEl = null, hasResults = false, chipsWrap;
+  /* [client] Windows / Android: the field is a real <input> (physical keyboard, system soft keyboard, IME, paste); the on-screen
+     keyboard is only shown to D-pad / gamepad users (or when the user pins it with the toggle in the field). */
+  var native = RESP, inp = null, kbBtn = null, kbOn = true, results = [], wantEnter = false, haveCols = 6, scr = null;
+  function wantKb() { return !native || (M.kbPin != null ? M.kbPin : inputMode() === 'pad'); }
+  function gx() { return kbOn ? 636 : 50; } // left edge of the results
+  function gcols() { return Math.max(3, Math.floor((RW - gx() - 4 - 24) / 180)); }
+  function canFocus() { return CLI !== 'android' && inputMode() !== 'pad'; } // Android: the soft keyboard only opens on a tap
   function recents() { return store.get('recent', []); }
   function eff() { return q + (pend ? pend.ch : ''); }
   function renderField() {
+    if (native) { var v = eff(); if (inp.value !== v) inp.value = v; if (kbLab.length) paintPend(); return; }
     textEl.textContent = '';
     if (!q && !pend) textEl.appendChild(h('span', 'ph2', t('search.ph')));
     if (q) textEl.appendChild(document.createTextNode(q));
@@ -1086,22 +1269,23 @@ Screens.search = function () {
   function buildChips() {
     chipsWrap.textContent = ''; chipEls = [];
     recents().slice(0, 8).forEach(function (s, i) {
-      var c = h('div', 'rchip ell', s); c.style.top = (240 + i * 80) + 'px'; chipsWrap.appendChild(c); chipEls.push(c);
+      var c = h('div', 'rchip ell', s); c.style.top = (240 + i * 80) + 'px'; if (native) c.style.left = (gx() + 34) + 'px'; chipsWrap.appendChild(c); chipEls.push(c);
     });
   }
   function doSearch() {
     var s = eff().trim();
     if (s === lastQ) return; lastQ = s;
-    if (s.length < 2) { grid.set([]); hasResults = false; info.textContent = s ? '' : ''; if (zone === 'r') zone = 'k'; mark(); return; }
+    if (s.length < 2) { results = []; grid.set([]); hasResults = false; info.textContent = s ? '' : ''; if (zone === 'r') zone = native && !kbOn ? 'f' : 'k'; mark(); return; }
     var my = ++seq;
     info.textContent = t('search.searching');
     cget('/api/search?q=' + encodeURIComponent(s), 120000, 10000).then(function (d) {
       if (dead || my !== seq) return;
       var res = (d && d.results) || [];
-      grid.set(res); hasResults = res.length > 0;
+      results = res; grid.set(res); hasResults = res.length > 0;
       info.textContent = res.length ? '' : t('search.noResults', s);
+      if (native && wantEnter) { wantEnter = false; if (hasResults) goRight(); }
       mark();
-    }, function (er) { if (dead || my !== seq) return; grid.set([]); hasResults = false; info.textContent = t('search.error', er.message); });
+    }, function (er) { if (dead || my !== seq) return; results = []; grid.set([]); hasResults = false; wantEnter = false; info.textContent = t('search.error', er.message); });
   }
   function remember() {
     var s = eff().trim(); if (s.length < 2) return;
@@ -1122,6 +1306,7 @@ Screens.search = function () {
     chipEls.forEach(function (e, i) { setF(e, zone === 'c' && i === ci); });
     grid.setActive(zone === 'r');
     renderField();
+    if (native && zone === 'f' && canFocus() && document.activeElement !== inp) inp.focus();
   }
   function pressKey(i) {
     if (kbm === 'grid') {
@@ -1164,6 +1349,43 @@ Screens.search = function () {
   function goRight() { // from keyboard to results / chips
     if (hasResults) { zone = 'r'; grid.setRow(0); }
     else if (chipEls.length && !chipsWrap.classList.contains('hid')) { zone = 'c'; ci = 0; }
+  }
+  /* [client] on-screen keyboard shown / hidden, results grid re-laid out next to it */
+  function makeResGrid() {
+    var left = native ? gx() : 636, w = native ? RW - left - 4 : 1170;
+    haveCols = native ? gcols() : 6;
+    return makeGrid($root, { cols: haveCols, sx: 180, sy: 300, cw: 150, ch: 225, left: left, top: 180, width: w, height: 900,
+      onOpen: function (it) { remember(); push('detail', { type: it.type, id: it.id, item: it }); } });
+  }
+  function paintKbLayout() {
+    kbBox.classList[kbOn ? 'remove' : 'add']('hid'); legend.classList[kbOn ? 'remove' : 'add']('hid');
+    kbBtn.classList[kbOn ? 'add' : 'remove']('on');
+    var lx = (gx() + 34) + 'px';
+    info.style.left = lx; capEl.style.left = lx;
+    chipEls.forEach(function (c) { c.style.left = lx; });
+    if (!kbOn && zone === 'k') zone = 'f';
+  }
+  function applyKb() {
+    kbOn = wantKb(); paintKbLayout();
+    var old = grid; grid = makeResGrid(); old.remove(); grid.set(results);
+    mark();
+  }
+  function kbPos(i) { // on-screen key index -> kr / kc
+    if (kbm === 'grid') { if (i < 36) { kr = Math.floor(i / 6); kc = i % 6; } else { kr = 6; kc = GK_BOT[i - 36][0]; } }
+    else if (i < 12) { kr = Math.floor(i / 3); kc = i % 3; } else { kr = 4; kc = i - 12; }
+  }
+  function submit() { // Enter in the field: search now, then into the results
+    commitPend(); clearTimeout(timer); lastQ = null; doSearch(); remember();
+    if (hasResults) { goRight(); mark(); } else wantEnter = true;
+  }
+  function typingKey(k) { // a key the real <input> hands over (Enter / Esc / Up / Down)
+    if (k === 'back') { pop(); return true; }
+    if (k === 'enter' && zone === 'f') { submit(); if (zone !== 'f') inp.blur(); return true; }
+    if (k === 'up' && zone === 'f') return false;
+    var z = zone;
+    scr.key(k);
+    if (z === 'f' && zone !== 'f') inp.blur();
+    return true;
   }
   function buildKb() {
     kbBox.textContent = ''; kbEls = []; kbKeys = []; kbLab = [];
@@ -1216,12 +1438,26 @@ Screens.search = function () {
     else if (k === 'left') { if (kr < 4 && kc > 0) kc--; else if (kr === 4 && kc === 1) kc = 0; else focusRail(); }
     else if (k === 'right') { if (kr < 4 && kc < 2) kc++; else if (kr === 4 && kc === 0) kc = 1; else goRight(); }
   }
-  return {
+  var api = {
     mount: function () {
-      field = h('div', 'sf'); field.appendChild(svg('search', 40)); textEl = h('span'); field.appendChild(textEl); $root.appendChild(field);
-      ime = document.createElement('input'); ime.type = 'text'; ime.style.cssText = 'position:absolute;left:100px;top:60px;width:300px;height:40px;opacity:0';
-      $root.appendChild(ime);
-      ime.addEventListener('blur', function () { if (editInput === ime) endEdit(false); });
+      field = h('div', 'sf'); field.appendChild(svg('search', 40));
+      if (native) {
+        inp = document.createElement('input'); inp.type = 'text'; inp.value = q; inp.placeholder = t('search.ph'); inp.spellcheck = false;
+        inp.setAttribute('autocomplete', 'off'); inp.setAttribute('autocorrect', 'off'); inp.setAttribute('autocapitalize', 'off'); inp.setAttribute('enterkeyhint', 'search');
+        inp.addEventListener('input', function () { pend = null; clearTimeout(pendTimer); q = inp.value; schedule(); showChips(); });
+        inp.addEventListener('pointerdown', function () { if (zone !== 'f') { zone = 'f'; mark(); } });
+        inp.addEventListener('focus', function () { if (zone !== 'f') { zone = 'f'; mark(); } });
+        inp.__sppKey = typingKey;
+        kbBtn = h('div', 'kbt', '⌨'); kbBtn.title = t('kp.toggle');
+        field.appendChild(inp); field.appendChild(kbBtn);
+        kbOn = wantKb();
+      } else { textEl = h('span'); field.appendChild(textEl); }
+      $root.appendChild(field);
+      if (!native) {
+        ime = document.createElement('input'); ime.type = 'text'; ime.style.cssText = 'position:absolute;left:100px;top:60px;width:300px;height:40px;opacity:0';
+        $root.appendChild(ime);
+        ime.addEventListener('blur', function () { if (editInput === ime) endEdit(false); });
+      }
       legend = h('div', 'legend'); $root.appendChild(legend);
       kbBox = h('div', 'kb'); $root.appendChild(kbBox);
       if (M.kbm !== kbm || kr < 0 || kc < 0 || (kbm === 'phone' ? kr > 4 || kc > 2 || (kr === 4 && kc > 1) : kr > 6 || kc > 5)) { kr = 0; kc = 0; }
@@ -1230,11 +1466,15 @@ Screens.search = function () {
       capEl = h('div', 'rcap'); $root.appendChild(capEl);
       chipsWrap = h('div', 'hid'); $root.appendChild(chipsWrap);
       info = h('div', 'ab sec', ''); info.style.cssText = 'left:670px;top:200px'; $root.appendChild(info);
-      grid = makeGrid($root, { cols: 6, sx: 180, sy: 300, cw: 150, ch: 225, left: 636, top: 180, width: 1170, height: 900,
-        onOpen: function (it) { remember(); push('detail', { type: it.type, id: it.id, item: it }); } });
+      grid = makeResGrid();
       showChips();
       if (zone === 'c' && !chipEls.length) zone = 'f';
       if (zone === 'r') zone = 'f';
+      if (native) {
+        paintKbLayout();
+        kbBox.addEventListener('mousedown', function (e) { e.preventDefault(); }); // clicking a key keeps the typing focus in the field
+        chipsWrap.addEventListener('mousedown', function (e) { e.preventDefault(); });
+      }
       mark();
       if (eff().length >= 2) doSearch();
     },
@@ -1251,23 +1491,54 @@ Screens.search = function () {
       commitPend();
       if (k === 'back') { pop(); return; }
       if (zone === 'f') {
+        if (k === 'enter' && native) { inp.focus(); return; }
         if (k === 'enter') { ime.value = q; startEdit(ime, function (commit) { if (commit) { q = ime.value; pend = null; renderField(); showChips(); clearTimeout(timer); doSearch(); remember(); } }); return; }
-        if (k === 'down') zone = 'k'; else if (k === 'left') focusRail();
+        if (k === 'down') { if (native && !kbOn) goRight(); else zone = 'k'; } else if (k === 'left') focusRail();
         else if (k === 'right') goRight();
       } else if (zone === 'k') {
         kbNav(k);
       } else if (zone === 'c') {
         if (k === 'up') { if (ci > 0) ci--; else zone = 'f'; }
         else if (k === 'down') ci = Math.min(chipEls.length - 1, ci + 1);
-        else if (k === 'left') zone = 'k';
-        else if (k === 'enter') { setQ(chipEls[ci].textContent); lastQ = null; clearTimeout(timer); doSearch(); zone = 'k'; }
+        else if (k === 'left') { if (native && !kbOn) focusRail(); else zone = 'k'; }
+        else if (k === 'enter') { setQ(chipEls[ci].textContent); lastQ = null; clearTimeout(timer); doSearch(); zone = native && !kbOn ? 'f' : 'k'; }
       } else {
         var r = grid.key(k);
-        if (r === 'left') zone = 'k'; else if (r === 'up') zone = 'f';
+        if (r === 'left') { if (native && !kbOn) focusRail(); else zone = 'k'; } else if (r === 'up') zone = 'f';
       }
       mark();
+    },
+    other: function (e) { // [client] a letter while the field is not focused (after clicking a key / result): it goes into the field
+      if (native && e.isTrusted && !e.ctrlKey && !e.altKey && !e.metaKey && e.key && e.key.length === 1 && document.activeElement !== inp) { zone = 'f'; inp.focus(); mark(); }
+    },
+    modality: function () { if (native && M.kbPin == null && wantKb() !== kbOn) applyKb(); },
+    stale: function () { return native && gcols() !== haveCols; },
+    point: function (type, el, d) { // [client]
+      if (type === 'wheel') { if (d.dy) grid.scroll(d.dy); return true; }
+      if (up(el, 'kbt')) { if (type === 'click') { M.kbPin = !kbOn; applyKb(); } return true; }
+      var ke = kbOn ? up(el, 'kk') : null, ce = up(el, 'rchip'), gi = grid.hit(el);
+      if (ke && kbEls.indexOf(ke) >= 0) {
+        var ki = kbEls.indexOf(ke);
+        zone = 'k'; kbPos(ki);
+        if (type === 'click') pressKey(ki);
+        mark(); return true;
+      }
+      if (ce && chipEls.indexOf(ce) >= 0) {
+        zone = 'c'; ci = chipEls.indexOf(ce);
+        if (type === 'click') { setQ(chipEls[ci].textContent); lastQ = null; clearTimeout(timer); doSearch(); zone = 'f'; }
+        mark(); return true;
+      }
+      if (gi >= 0) {
+        zone = 'r'; grid.setIdx(gi); mark();
+        if (type === 'click') grid.key('enter');
+        return true;
+      }
+      if (up(el, 'sf') && type === 'click') { zone = 'f'; inp.focus(); mark(); return true; }
+      return false;
     }
   };
+  scr = api;
+  return api;
 };
 
 /* =====================================================================
@@ -1501,10 +1772,19 @@ Screens.detail = function (p) {
     var box = h('div', 'box'); box.appendChild(h('div', 't', t('rate.title')));
     var s = h('div', 'stars'), a = '', b = '';
     for (var i = 0; i < 5; i++) { if (i < rate.v) a += '★'; else b += '★'; }
-    s.appendChild(h('b', '', a)); s.appendChild(document.createTextNode(b)); box.appendChild(s);
+    if (RESP) { // [client] each star is clickable: click sets it and saves (click the current one again to clear)
+      for (var si = 0; si < 5; si++) {
+        var sp = h('span', si < rate.v ? 'on' : '', '★');
+        sp.addEventListener('click', (function (n) { return function () { rate.v = n === rate.v ? 0 : n; rateKey('enter'); }; })(si + 1));
+        s.appendChild(sp);
+      }
+      box.appendChild(s);
+    } else { s.appendChild(h('b', '', a)); s.appendChild(document.createTextNode(b)); box.appendChild(s); }
     box.appendChild(h('div', 'sec sm', rate.v ? t('rate.hint', rate.v) : t('rate.none')));
     var r1 = r100Target();
-    box.appendChild(h('div', 'sec sm r1', r1.movie ? t('rate.r100movie') : t('rate.r100ep', r1.label)));
+    var r1el = h('div', 'sec sm r1', r1.movie ? t('rate.r100movie') : t('rate.r100ep', r1.label));
+    if (RESP) { r1el.className += ' lnk'; r1el.addEventListener('click', function () { rate = null; closeModal(); openR100(); }); }
+    box.appendChild(r1el);
     $modal.appendChild(box); $modal.className = 'rt';
   }
   // what the 0-100 rating from Detail applies to: the movie, or the episode focused in the list (else the next/resumed one)
@@ -1610,12 +1890,46 @@ Screens.detail = function (p) {
         if (!longDone) { var v = vids[ei]; if (v) openStreams(v); }
         mark();
       }
+    },
+    point: function (type, el, d) { // [client] element -> focus index; hover moves the focus, click activates, the wheel scrolls the panel
+      if (rate) return false; // the stars box has its own listeners
+      if (err || !meta) { if (err && type === 'click' && up(el, 'btn')) actBtn(); return true; }
+      if (type === 'wheel') {
+        if (inside(el, panel)) {
+          if (mode === 'ep') { if (d.dy) { epOff = clamp(epOff + d.dy, 0, Math.max(0, vids.length - 7)); drawEps(); } }
+          else if (sl) sl.scroll(d.dy || 0);
+        }
+        return true;
+      }
+      var b = btnEls.indexOf(up(el, 'btn'));
+      if (b >= 0 && inside(el, left)) { zone = 'btn'; bi = b; mark(); if (type === 'click') actBtn(); return true; }
+      if (seasonEl && inside(el, seasonEl)) {
+        zone = 'season';
+        if (type === 'click') {
+          var sr = seasonEl.getBoundingClientRect(), dir = d.x < sr.left + sr.width / 2 ? -1 : 1;
+          if (dir < 0 ? ti > 0 : ti < seasons.length - 1) changeSeason(ti + dir);
+        }
+        mark(); return true;
+      }
+      var epEl = mode === 'ep' ? up(el, 'ep') : null;
+      if (epEl) {
+        for (var k in epNodes) if (epNodes[k] === epEl) {
+          if (zone !== 'ep' || ei !== +k) { zone = 'ep'; ei = +k; mark(); if (btnEls[3]) btnEls[3].lastChild.textContent = watchedLabel(); }
+          if (type === 'click') { var v = vids[ei]; if (v) openStreams(v); }
+          return true;
+        }
+      }
+      if (mode === 'st' && sl) {
+        if (up(el, 'ph1')) { if (type === 'click' && isSeries()) { mode = 'ep'; zone = 'ep'; drawPanel(); mark(); } return true; }
+        if (sl.point(type, el, d)) { if (zone !== 'st') { zone = 'st'; mark(); } return true; }
+      }
+      return false;
     }
   };
 };
 Screens.settings = function () {
   var S = { audioLang: 'pt', subLang: 'pt', autoSkip: false, kbMode: srvSet('kbMode', 'grid'), ratingInput: srvSet('ratingInput', 'dpad'), ratePrompt: srvSet('ratePrompt', true) !== false };
-  var idx = 0, off = 0, els = [], vEls = [], kEls = [], dead = false, note, srvEdit, prev, h1, strip;
+  var idx = 0, off = 0, els = [], vEls = [], kEls = [], dead = false, note, srvEdit, prev, h1, strip, hold = false, api = null;
   // [row id, label key]; rows scroll when they do not fit (VIS rows visible)
   var ROWS = [['server', 'set.server'], ['audio', 'set.audio'], ['subs', 'set.subs'], ['skip', 'set.skip'], ['subSize', 'set.subSize'], ['subColor', 'set.subColor'],
     ['subBg', 'set.subBg'], ['subPos', 'set.subPos'], ['kb', 'set.kb'], ['rateIn', 'set.rateIn'], ['ratePrompt', 'set.ratePrompt'], ['appLang', 'set.appLang'], ['about', 'set.about']];
@@ -1645,8 +1959,9 @@ Screens.settings = function () {
     if (r === 'saver') return saverOn() ? t('val.on') : t('val.off');
     return 'v' + VERSION;
   }
-  function refresh() {
-    if (idx > off + VIS - 2) off = Math.min(ROWS.length - VIS, idx - VIS + 2); else if (idx < off + 1) off = Math.max(0, idx - 1);
+  function refresh(noScroll) {
+    if (noScroll || hold) { /* [client] the pointer picked this row: keep the list where it is */ }
+    else if (idx > off + VIS - 2) off = Math.min(ROWS.length - VIS, idx - VIS + 2); else if (idx < off + 1) off = Math.max(0, idx - 1);
     tx(strip, 0, -off * 80);
     vEls.forEach(function (e, i) { e.textContent = val(i); }); els.forEach(function (e, i) { setF(e, i === idx); });
   }
@@ -1661,7 +1976,7 @@ Screens.settings = function () {
     kEls.forEach(function (e, i) { e.textContent = t(ROWS[i][1]); });
     drawNote(); drawPrev();
   }
-  return {
+  api = {
     mount: function () {
       h1 = h('div', 'h1', t('set.title')); $root.appendChild(h1);
       var w = h('div', 'setwrap'); strip = h('div', 'ab'); strip.style.cssText = 'left:0;top:0;width:1100px'; w.appendChild(strip);
@@ -1726,8 +2041,18 @@ Screens.settings = function () {
         }
       }
       refresh(); drawPrev();
+    },
+    point: function (type, el, d) { // [client]
+      if (type === 'wheel') { if (d.dy) { off = clamp(off + d.dy, 0, Math.max(0, ROWS.length - VIS)); refresh(true); } return true; }
+      if (el === srvEdit) return false;
+      var i = els.indexOf(up(el, 'srow'));
+      if (i < 0) return false;
+      if (type === 'move') { if (idx !== i) { idx = i; refresh(true); drawPrev(); } }
+      else if (type === 'click') { idx = i; hold = true; api.key('enter'); hold = false; }
+      return true;
     }
   };
+  return api;
 };
 
 /* ---------- subtitle style ---------- */
@@ -1828,6 +2153,11 @@ Screens.player = function (ctx) {
     clearTimeout(toastTimer); toastTimer = setTimeout(function () { show(E.toast, false); }, 2500);
   }
 
+  function layoutCtl() { // [client] controls anchored to the right edge of the stage; bigger and further apart for touch
+    var touch = inputMode() === 'touch', size = touch ? 104 : 76, pitch = touch ? 124 : 84, n = E.ctls.length - 1;
+    E.ctls.forEach(function (c, i) { c.style.left = (i === 0 ? 100 : SW - 96 - size - (n - i) * pitch) + 'px'; });
+  }
+  function barW() { return RESP ? E.bar.offsetWidth || 1720 : 1720; }
   function ctlBtn(left, icon) {
     var c = h('div', 'ctl'); c.style.left = left + 'px'; c.appendChild(svg(icon, 40)); return c;
   }
@@ -1836,7 +2166,7 @@ Screens.player = function (ctx) {
     document.documentElement.classList.add('playing');
     if (AVMOCK) {
       var m = h('div', 'ab', t('pl.mock'));
-      m.style.cssText = 'left:0;top:480px;width:1920px;text-align:center;color:#3c4a5c;font-size:30px'; $root.appendChild(m);
+      m.style.cssText = 'left:0;top:480px;width:' + SW + 'px;text-align:center;color:#3c4a5c;font-size:30px'; $root.appendChild(m);
     }
     E.sub = h('div'); E.sub.id = 'sub'; applySubStyle(E.sub); $root.appendChild(E.sub);
     E.osd = h('div', 'hid'); E.osd.id = 'osd';
@@ -1851,6 +2181,7 @@ Screens.player = function (ctx) {
     var CTL_X = { pause: 100, party: ctx.type === 'series' ? 1412 : 1496, eps: 1496, cc: 1580, audio: 1664, src: 1748 };
     E.ctls = E.ctlNames.map(function (n) { return ctlBtn(CTL_X[n], n); });
     [E.ot, E.os, E.bar, E.tm].concat(E.ctls).forEach(function (e) { E.osd.appendChild(e); });
+    if (RESP) { E.bhit = h('div', 'obhit'); E.osd.appendChild(E.bhit); layoutCtl(); } // [client] wide click target over the seek bar
     $root.appendChild(E.osd);
     E.ico = h('div', 'ico hid'); E.ico.appendChild(svg('pause', 110)); $root.appendChild(E.ico);
     E.spin = h('div', 'spinbox'); E.spin.appendChild(h('div', 'spin')); $root.appendChild(E.spin);
@@ -1875,7 +2206,7 @@ Screens.player = function (ctx) {
     var t = P.seek ? P.seek.target : P.pos, d = P.duration;
     var pct = d > 0 ? clamp(t / d, 0, 1) : 0;
     E.fill.style.width = Math.round(pct * 1000) / 10 + '%';
-    tx(E.knob, Math.round(pct * 1720), 0);
+    tx(E.knob, Math.round(pct * barW()), 0);
     E.tm.textContent = '';
     E.tm.appendChild(document.createTextNode(fmtTime(t)));
     E.tm.appendChild(h('span', '', '  /  ' + fmtTime(d)));
@@ -2304,6 +2635,7 @@ Screens.player = function (ctx) {
   }
   function isSel(it) { return !!it.t; }
   function openPanel(type, keep) {
+    var prevPanel = P.panel;
     closePanelQuiet();
     show(E.pnl, true); show(E.osd, true); E.sub.classList.add('up'); renderBar(); clearTimeout(osdTimer);
     if (type === 'src') {
@@ -2324,21 +2656,29 @@ Screens.player = function (ctx) {
     }
     panelHeader(t(type === 'audio' ? 'pn.audio' : type === 'eps' ? 'pn.episodes' : 'pn.subs'));
     var items = buildItems(type), idx = keep != null ? keep : -1, i;
+    var keepOff = keep != null && prevPanel && prevPanel.type === type ? prevPanel.off : null;
     if (idx < 0) {
       for (i = 0; i < items.length; i++) if (items[i].on) { idx = i; break; }
       if (idx < 0) { idx = 0; while (idx < items.length && !isSel(items[idx])) idx++; }
     }
     var strip = h('div', 'strip'); E.pnl.appendChild(strip);
-    P.panel = { type: type, items: items, idx: idx, els: [], strip: strip };
+    P.panel = { type: type, items: items, idx: idx, els: [], strip: strip, off: keepOff };
     items.forEach(function (it) {
       var e = h('div', 'pi' + (it.hd ? ' hd' : '') + (it.on ? ' on' : ''), it.hd ? it.hd : ((it.on ? '✓  ' : '') + it.label));
       strip.appendChild(e); P.panel.els.push(e);
     });
     paintPanel();
   }
-  function paintPanel() {
+  function paintPanel(hover) {
     var pn = P.panel; if (!pn || !pn.els) return;
     pn.els.forEach(function (e, i) { setF(e, i === pn.idx); });
+    if (RESP) { // [client] the visible window is kept apart from the focus, so hovering with the mouse never scrolls the list
+      var vis = 12, mx = Math.max(0, pn.els.length - vis);
+      if (pn.off == null) pn.off = clamp(pn.idx - 9, 0, mx);
+      else if (!hover) { if (pn.idx < pn.off) pn.off = pn.idx; else if (pn.idx > pn.off + vis - 1) pn.off = pn.idx - vis + 1; }
+      tx(pn.strip, 0, -pn.off * 74);
+      return;
+    }
     tx(pn.strip, 0, -Math.max(0, pn.idx - 9) * 74);
   }
   function closePanelQuiet() { if (P.panel && P.panel.sl) P.panel.sl.destroy(); P.panel = null; E.pnl.textContent = ''; }
@@ -2468,7 +2808,79 @@ Screens.player = function (ctx) {
     };
   }
 
-  return {
+  /* ---- [client] mouse / touch ---- */
+  var lastOsdMove = 0;
+  function seekAt(x, hold) { // click / drag on the seek bar
+    if (P.duration <= 0 || P.state === 'loading') return;
+    var r = E.bar.getBoundingClientRect(), tgt = clamp((x - r.left) / (r.width || 1), 0, 1) * P.duration;
+    tgt = clamp(tgt, 0, Math.max(0, P.duration - 3));
+    clearTimeout(seekTimer);
+    if (hold) { P.seek = { base: P.pos, sum: 0, count: 0, last: Date.now(), target: tgt, dir: 0 }; showOsd(); }
+    else { P.seek = null; applySeek(tgt); showOsd(); }
+  }
+  function toggleMute() {
+    var v = AV === window.AVHTML5 ? AV.video() : null;
+    if (!v) return;
+    v.muted = !v.muted; toast(t(v.muted ? 'pl.muted' : 'pl.unmuted'));
+  }
+  function volume(dir) {
+    var v = AV === window.AVHTML5 ? AV.video() : null;
+    if (!v) return;
+    v.muted = false; v.volume = clamp(Math.round((v.volume + dir * 0.05) * 100) / 100, 0, 1);
+    toast(t('pl.volume', Math.round(v.volume * 100)));
+  }
+  function dragSeek(type, el, d) { // a press on the seek bar is captured: dragging previews, releasing seeks
+    if (type === 'down') return !P.panel && !P.err && !P.low && osdVisible() && !!up(el, 'obhit');
+    seekAt(d.x, type === 'drag');
+    return true;
+  }
+  function point(type, el, d) {
+    if (P.err || P.low) { // error box
+      var eb = inside(el, E.err) ? E.errb.indexOf(up(el, 'btn')) : -1;
+      if (eb >= 0) {
+        if (type === 'move' && !P.low) { errIdx = eb; setF(E.errb[0], eb === 0); setF(E.errb[1], eb === 1); }
+        else if (type === 'click') { errIdx = P.low ? 0 : eb; api.key('enter'); }
+      }
+      return true;
+    }
+    var pn = P.panel;
+    if (pn) {
+      if (!inside(el, E.pnl)) { if (type === 'click') closePanel(); return true; } // a click on the video side closes the panel
+      if (type === 'wheel') {
+        if (pn.type === 'src') pn.sl.scroll(d.dy || 0);
+        else if (pn.els && d.dy) { pn.off = clamp((pn.off || 0) + d.dy, 0, Math.max(0, pn.els.length - 12)); paintPanel(true); }
+        return true;
+      }
+      if (up(el, 'ph1')) { if (type === 'click') closePanel(); return true; }
+      if (pn.type === 'src') return pn.sl.point(type, el, d);
+      var pi = pn.els ? pn.els.indexOf(up(el, 'pi')) : -1;
+      if (pi >= 0 && pn.items[pi].t) {
+        var it = pn.items[pi];
+        if (type === 'move') { if (pn.idx !== pi) { pn.idx = pi; paintPanel(true); } }
+        else if (type === 'click') {
+          pn.idx = pi; paintPanel(true);
+          if (it.t === 'fine' || it.t === 'coarse') { var pr = pn.els[pi].getBoundingClientRect(); nudgeSub((d.x < pr.left + pr.width / 2 ? -1 : 1) * (it.t === 'fine' ? 0.1 : 1)); openPanel('subs', pi); }
+          else panelKey('enter');
+        }
+      }
+      return true;
+    }
+    if (type === 'wheel') {
+      if (d.swipe && d.dx) { for (var n = Math.abs(d.dx); n > 0; n--) seekKey(d.dx > 0 ? 1 : -1); } // touch: horizontal swipe seeks
+      else if (!d.swipe && d.dy) volume(d.dy > 0 ? -1 : 1);
+      return true;
+    }
+    if (type === 'dblclick') { if (window.SPP_CLIENT.fullscreen) window.SPP_CLIENT.fullscreen(); return true; }
+    if (nextVisible() && inside(el, E.nx)) { if (type === 'click') playNext(); return true; }
+    if (!E.skip.classList.contains('hid') && inside(el, E.skip)) { if (type === 'click') doSkip(); return true; }
+    var ci = E.ctls.indexOf(up(el, 'ctl'));
+    if (ci >= 0) { if (type === 'click') { P.ctl = ci; ctlKey('enter'); P.ctl = -1; paintCtl(); } return true; }
+    if (type === 'move') { var now = Date.now(); if (!osdVisible() || now - lastOsdMove > 800) { lastOsdMove = now; showOsd(); } return true; }
+    if (type === 'click') { if (osdVisible()) hideOsd(); else showOsd(); return true; }
+    return false;
+  }
+
+  var api = {
     mount: function () {
       build();
       setSpin(true);
@@ -2521,13 +2933,26 @@ Screens.player = function (ctx) {
         default: showOsd();
       }
     },
-    other: function () { if (!P.err && !P.low) showOsd(); },
+    other: function (e) {
+      if (RESP && e && e.key) { // [client] F fullscreen, M mute (F11 is handled by the window)
+        var c = e.key.toLowerCase();
+        if (c === 'f') { if (window.SPP_CLIENT.fullscreen) window.SPP_CLIENT.fullscreen(); return; }
+        if (c === 'm') { toggleMute(); return; }
+      }
+      if (!P.err && !P.low) showOsd();
+    },
+    point: point,
+    drag: dragSeek,
+    restage: function () { layoutCtl(); renderBar(); },
+    modality: function () { layoutCtl(); },
     _P: P
   };
+  return api;
 };
 
 /* ---------- start ---------- */
-window.__spp = { mount: mount, nav: nav, cache: cache, keyStats: keyStats, store: store, version: VERSION, player: function () { return nav.cur && nav.cur._P; } };
+window.__spp = { mount: mount, nav: nav, cache: cache, keyStats: keyStats, store: store, version: VERSION, player: function () { return nav.cur && nav.cur._P; },
+  pointer: pointer, modality: modality, restage: restage, resp: RESP };
 registerKeys();
 boot();
 })();

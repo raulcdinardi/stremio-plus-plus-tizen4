@@ -72,7 +72,7 @@ public class MainActivity extends Activity {
     @Override protected void onDestroy() { if (web != null) web.destroy(); super.onDestroy(); }
 
     /** Sends an app key name (left/right/up/down/enter/back/toggle/play/pause/stop/ff/rw) to the web app. */
-    private void appKey(String name) { web.evaluateJavascript("window.SPP&&SPP.key('" + name + "')", null); }
+    private void appKey(String name) { web.evaluateJavascript("window.SPP_CLIENT&&SPP_CLIENT.key&&SPP_CLIENT.key('" + name + "')", null); }
 
     @Override public void onBackPressed() { appKey("back"); }
 

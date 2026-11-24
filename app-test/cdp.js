@@ -37,6 +37,30 @@ async function launch(port = 9333) {
       }
     },
     async type(text) { await send('Input.insertText', { text }); },
+    // responsive-client tests: set the viewport (and touch emulation), screenshot it whole, real mouse / touch / keyboard input
+    async viewport(w, h, o = {}) {
+      await send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: o.dpr || 1, mobile: !!o.mobile });
+      await send('Emulation.setTouchEmulationEnabled', { enabled: !!o.touch, maxTouchPoints: o.touch ? 5 : 1 });
+      api.vw = w; api.vh = h;
+    },
+    async shotFile(file) { const r = await send('Page.captureScreenshot', { format: 'png' }); fs.mkdirSync(require('path').dirname(file), { recursive: true }); fs.writeFileSync(file, Buffer.from(r.data, 'base64')); return file; },
+    async mouse(type, x, y, o = {}) { await send('Input.dispatchMouseEvent', Object.assign({ type, x, y, button: 'none', buttons: 0, clickCount: 0 }, o)); },
+    async click(x, y, button = 'left') { await api.mouse('mouseMoved', x, y); await api.mouse('mousePressed', x, y, { button, buttons: 1, clickCount: 1 }); await api.mouse('mouseReleased', x, y, { button, clickCount: 1 }); },
+    async wheel(x, y, dx, dy) { await api.mouse('mouseWheel', x, y, { deltaX: dx, deltaY: dy }); },
+    async tap(x, y) { await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); },
+    async swipe(x0, y0, x1, y1, steps = 8) {
+      await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y: y0 }] });
+      for (let i = 1; i <= steps; i++) await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 + (x1 - x0) * i / steps, y: y0 + (y1 - y0) * i / steps }] });
+      await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    },
+    // a real (trusted) key press; `text` makes it type a character
+    async press(key, o = {}) {
+      const base = Object.assign({ key, code: o.code || (key.length === 1 ? 'Key' + key.toUpperCase() : key), windowsVirtualKeyCode: o.vk || (key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0), modifiers: o.mod || 0 }, o.extra || {});
+      await send('Input.dispatchKeyEvent', Object.assign({ type: o.text || key.length === 1 ? 'keyDown' : 'rawKeyDown', text: o.text !== undefined ? o.text : key.length === 1 ? key : undefined }, base));
+      await send('Input.dispatchKeyEvent', Object.assign({ type: 'keyUp' }, base));
+    },
+    // rect of the first element matching a selector, in viewport px
+    async rect(sel) { return api.ev(`(function(){var e=document.querySelector(${JSON.stringify(sel)});if(!e)return null;var r=e.getBoundingClientRect();return {x:r.left,y:r.top,w:r.width,h:r.height,cx:r.left+r.width/2,cy:r.top+r.height/2}})()`); },
     async shot(name) { const r = await send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 1920, height: 1080, scale: 1 } }); const f = `${__dirname}/shots/${name}.png`; fs.writeFileSync(f, Buffer.from(r.data, 'base64')); return f; },
     async waitFor(expr, ms = 8000) { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (await api.ev(expr)) return true; } catch (e) {} await sleep(100); } throw new Error('timeout waiting: ' + expr); },
     async gc() { await send('HeapProfiler.collectGarbage'); await sleep(100); },
